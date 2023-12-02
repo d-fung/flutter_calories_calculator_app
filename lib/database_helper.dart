@@ -8,6 +8,7 @@ class DatabaseHelper {
 
     return openDatabase(
       join(dbPath, 'calories_counter.db'),
+      // Create a food_calories table and a meal_plan table
       onCreate: (db, version) async {
         await db.execute(
           'CREATE TABLE food_calories(food TEXT PRIMARY KEY, calories INTEGER);',
@@ -31,11 +32,12 @@ class DatabaseHelper {
           conflictAlgorithm: ConflictAlgorithm.replace,
         );
       } catch (e) {
-        // Handle the exception (e.g., log it or display an error message)
+        print(e);
       }
     }
   }
 
+  // Returns a query of all meal plans
   Future<List<MealPlan>> getAllMealPlans() async {
     final db = await getDatabase();
     final List<Map<String, dynamic>> maps = await db.query('meal_plan');
@@ -55,16 +57,15 @@ class DatabaseHelper {
       whereArgs: [plan.date],
     );
 
+    // Updates existing meal plan
     if (existingPlan.isNotEmpty) {
-      // Update the existing plan
       await db.update(
         'meal_plan',
         plan.toMap(),
         where: 'date = ?',
         whereArgs: [plan.date],
       );
-    } else {
-      // Insert new plan
+    } else { // Insert a new plan if there isn't one for that date
       await db.insert(
         'meal_plan',
         plan.toMap(),
@@ -72,6 +73,7 @@ class DatabaseHelper {
     }
   }
 
+  // Deletes meal plan from database based on date
   Future<void> deleteMealPlan(String date) async {
     final db = await getDatabase();
     await db.delete(

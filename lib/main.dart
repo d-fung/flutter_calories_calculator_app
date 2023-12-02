@@ -68,6 +68,8 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
 
   List<MealPlan> mealPlans = [];
+  DateTime? filterDate;
+  TextEditingController dateController = TextEditingController();
 
   @override
   void initState(){
@@ -75,6 +77,7 @@ class _MyHomePageState extends State<MyHomePage> {
     loadMealPlans();
   }
 
+  // Calls the DatabaseHelper delete method to delete a meal plan
   void _deleteMealPlan(String date) async {
     final dbHelper = DatabaseHelper();
     await dbHelper.deleteMealPlan(date);
@@ -82,12 +85,38 @@ class _MyHomePageState extends State<MyHomePage> {
     // Reload the meal plans to reflect the deletion
     loadMealPlans();
   }
+  // Calls the DatabaseHelper loadMealPlans method to load the meal plans from the database
   void loadMealPlans() async {
     final dbHelper = DatabaseHelper();
-    var plans = await dbHelper.getAllMealPlans();
+    var allPlans = await dbHelper.getAllMealPlans();
+
+    // Filter the meal plans if there is a filter date set
     setState(() {
-      mealPlans = plans;
-  });
+      if (filterDate != null) {
+        mealPlans = allPlans.where((plan) {
+          return DateFormat('yyyy-MM-dd').parse(plan.date) == filterDate;
+        }).toList();
+      } else {
+        mealPlans = allPlans;
+      }
+    });
+  }
+
+  // Function creates a date picker for the filter and reloads meal plans
+  Future<void> _pickFilterDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: filterDate ?? DateTime.now(),
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2025),
+    );
+    if (picked != null) {
+      setState(() {
+        filterDate = picked;
+        dateController.text = DateFormat('yyyy-MM-dd').format(picked);
+        loadMealPlans();
+      });
+    }
   }
 
   @override
@@ -96,39 +125,66 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: mealPlans.isEmpty
-          ? Center(child: Text("No meal plans found"))
-          : ListView.builder(
-        itemCount: mealPlans.length,
-        itemBuilder: (context, index) {
-          final plan = mealPlans[index];
-          return Card(
-            child: ListTile(
-              title: Text("Date: ${plan.date}"),
-              subtitle: Text("Target Calories: ${plan.targetCalories}"),
-              trailing: IconButton(
-                icon: Icon(Icons.close), // The 'X' icon
-                onPressed: () {
-                  _deleteMealPlan(plan.date); // Call method to delete the meal plan
-                },
+      body: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(8.0),
+            child: TextField(
+              controller: dateController,
+              decoration: InputDecoration(
+                labelText: "Filter by Date",
+                suffixIcon: filterDate != null
+                    ? IconButton(
+                  icon: Icon(Icons.clear),
+                  onPressed: () {
+                    setState(() {
+                      filterDate = null;
+                      dateController.clear();
+                      loadMealPlans();
+                    });
+                  },
+                )
+                    : Icon(Icons.calendar_today),
               ),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AddMealPlanPage(mealPlan: mealPlans[index]),
+              readOnly: true,
+              onTap: () => _pickFilterDate(context),
+            ),
+          ),
+          Expanded(
+            child: mealPlans.isEmpty
+                ? Center(child: Text("No meal plans found"))
+                : ListView.builder(
+              itemCount: mealPlans.length,
+              itemBuilder: (context, index) {
+                final plan = mealPlans[index];
+                return Card(
+                  child: ListTile(
+                    title: Text("Date: ${plan.date}"),
+                    subtitle: Text("Target Calories: ${plan.targetCalories}"),
+                    trailing: IconButton(
+                      icon: Icon(Icons.close),
+                      onPressed: () => _deleteMealPlan(plan.date),
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AddMealPlanPage(mealPlan: mealPlans[index]),
+                        ),
+                      ).then((_) => loadMealPlans());
+                    },
                   ),
-                ).then((_) => loadMealPlans());
+                );
               },
             ),
-          );
-        },
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => AddMealPlanPage()),
-        ).then((_) => loadMealPlans()), // Reload meal plans upon returning
+        ).then((_) => loadMealPlans()),
         tooltip: 'Add Meal Plan',
         child: const Icon(Icons.add),
         backgroundColor: Colors.orangeAccent,
@@ -137,6 +193,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 }
 
+// Add meal plan page
 class AddMealPlanPage extends StatefulWidget {
   final MealPlan? mealPlan;
   const AddMealPlanPage({Key? key, this.mealPlan}) : super(key: key);
@@ -155,6 +212,7 @@ class _AddMealPlanPageState extends State<AddMealPlanPage> {
   void initState() {
     super.initState();
 
+    // Need this to set calories as input passed in from homepage if editing an existing mealplan
     targetCaloriesController = TextEditingController(
         text: widget.mealPlan?.targetCalories?.toString() ?? '0'
     );
@@ -162,12 +220,12 @@ class _AddMealPlanPageState extends State<AddMealPlanPage> {
       selectedFoodCounts[key] = 0;
     });
 
+    // Initializes the meal plan
     if (widget.mealPlan != null) {
       // Parse the date from the meal plan
       selectedDate = DateFormat('yyyy-MM-dd').parse(widget.mealPlan!.date);
       targetCalories = widget.mealPlan!.targetCalories;
 
-      // Initialize food counts from the meal plan
       var foods = widget.mealPlan!.plan.split(', ');
       for (var food in foods) {
         var parts = food.split(':');
@@ -181,11 +239,12 @@ class _AddMealPlanPageState extends State<AddMealPlanPage> {
     }
   }
 
+  // Select a date for the meal plan
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate,
-      firstDate: DateTime(2000),
+      firstDate: DateTime(2023),
       lastDate: DateTime(2025),
     );
     if (picked != null && picked != selectedDate) {
@@ -195,6 +254,7 @@ class _AddMealPlanPageState extends State<AddMealPlanPage> {
     }
   }
 
+  // Adds total calories from selected food items
   int _calculateTotalCalories() {
     int total = 0;
     selectedFoodCounts.forEach((food, count) {
@@ -204,22 +264,20 @@ class _AddMealPlanPageState extends State<AddMealPlanPage> {
     return total;
   }
 
+  // Calls the DatabaseHelper method to save the meal plan
   Future<void> _saveMealPlan() async {
     if (selectedDate == null) {
       _showSnackBar('Please select a date.');
       return;
     }
 
-    String formattedDate = DateFormat('yyyy-MM-dd').format(selectedDate);
-
-    // Check if a meal plan for this date already exists
-    final dbHelper = DatabaseHelper();
-
+    // Checks if user selected target calories
     if (targetCalories == null) {
       _showSnackBar('Target calories must be set.');
       return;
     }
 
+    // show error message if calorie total exceeds set limit
     int totalCalories = _calculateTotalCalories();
     if (totalCalories > targetCalories!) {
       _showSnackBar('Selected food exceeds target calories.');
@@ -232,11 +290,12 @@ class _AddMealPlanPageState extends State<AddMealPlanPage> {
         .join(', ');
 
     final plan = MealPlan(
-      date: formattedDate,
+      date: DateFormat('yyyy-MM-dd').format(selectedDate),
       targetCalories: targetCalories!,
       plan: foodCounts,
     );
 
+    final dbHelper = DatabaseHelper();
     await dbHelper.insertMealPlan(plan);
     Navigator.pop(context);
   }
